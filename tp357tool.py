@@ -61,7 +61,7 @@ def bt_setup(address):
 
     write = bus.get("org.bluez", get_characteristic(uuid_write)[0])
     read = bus.get("org.bluez", get_characteristic(uuid_read)[0])
-    return read, write
+    return device, read, write
 
 
 def wait_for_temp(read, write):
@@ -136,12 +136,14 @@ def get_temperatures(read, write, mode):
 
 
 if __name__ == "__main__":
-    read, write = bt_setup(sys.argv[1])
+    device, read, write = bt_setup(sys.argv[1])
 
     if sys.argv[2] == "now":
         temps, humids = wait_for_temp(read, write)
     else:
         temps, humids = get_temperatures(read, write, sys.argv[2])
+
+    device.Disconnect()
 
     import csv
     writer = csv.writer(sys.stdout)
