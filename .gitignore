@@ -1,3 +1,4 @@
 *.rrd
 *.png
 .*
+viewer/viewer-*.json

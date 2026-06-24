@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Dejvice temperatures</title>
+<link rel="stylesheet" href="uPlot.min.css">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 8px; }
+  h1 { font-size: 18px; margin: 4px 4px 10px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .controls .group { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid #8888; border-radius: 6px;
+           background: #8881; cursor: pointer; min-height: 36px; }
+  button.active { background: #4363d8; color: #fff; border-color: #4363d8; }
+  #chart { width: 100%; }
+  .u-legend { font-size: 12px; }
+  .u-legend .u-series { cursor: pointer; }
+  .legend-actions { margin: 6px 0; display: flex; gap: 6px; }
+  .legend-actions button { padding: 4px 10px; min-height: 0; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Dejvice temperatures</h1>
+  <div class="controls">
+    <div class="group" id="metric"></div>
+    <div class="group" id="window"></div>
+  </div>
+  <div class="legend-actions">
+    <button id="all">all</button>
+    <button id="none">none</button>
+  </div>
+  <div id="chart"></div>
+  <script src="uPlot.iife.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

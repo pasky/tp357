@@ -34,3 +34,22 @@ Example:
 		{ a=0; while IFS=, read temp humid; do if [ "$a" = 0 ]; then A=N; else A=$a; fi; echo "$A:$temp:$humid"; a=$((a-60)); done; } | tac |
 		xargs rrdtool update sensor.rrd -s --
 	rrdtool graph sensor-1d.png --end now --start end-1d --width 1440 --height 280 -l 0 -u 40 --right-axis 2.5:0 --right-axis-format %.0lf%% DEF:temp=sensor.rrd:temp:AVERAGE DEF:humidr=sensor.rrd:humid:AVERAGE CDEF:humid=humidr,2.5,/ LINE1:temp#ff0000 LINE1:humid#0000ff
+
+Weather Station (outside / living room)
+--------------------------------------
+
+Besides the BLE sensors, a Wunderground-protocol weather station (`ID=brm`)
+POSTs readings every few seconds to
+`/weatherstation/updateweatherstation.php` on the `pasky` apache vhost.
+`weather.py` scrapes those readings out of the apache access log (no server
+needed), converts the Fahrenheit temperatures to Celsius, aggregates per
+minute, and feeds two RRDs: `outside.rrd` (`tempf`/`humidity`) and
+`livingroom.rrd` (`indoortempf`/`indoorhumidity`). It only feeds timestamps
+newer than each RRD's last update, so re-runs are idempotent.
+
+	./weather.py                 # incremental, reads /var/log/apache2/pasky.access_log
+	./weather.py $(ls -tr /var/log/apache2/pasky.access_log*)   # backfill from rotated logs
+
+Reading the apache logs requires membership in the `adm` group
+(`sudo usermod -aG adm pasky`). `dejvice.sh` runs `weather.py` and renders the
+`outside-*.png` / `livingroom-*.png` graphs alongside the room graphs.
