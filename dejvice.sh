@@ -32,7 +32,10 @@ for d in $devices; do
 		echo "  last update $(((now - last) / 3600))h ago -- backfilling from year history"
 		yearcsv=$(mktemp)
 		if "$PY" tp357tool.py $addr year >"$yearcsv"; then
-			"$PY" backfill.py $name.rrd "$yearcsv" --fetch-epoch "$now" --apply
+			# No --fetch-epoch: backfill.py defaults to time.time() at its
+			# own invocation, which matches the year fetch we just did far
+			# better than $now (captured minutes earlier, pre-BLE-fetch).
+			"$PY" backfill.py $name.rrd "$yearcsv" --apply
 		fi
 		rm -f "$yearcsv"
 	fi
