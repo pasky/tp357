@@ -1,4 +1,5 @@
 *.rrd
+*.rrd.bak-*
 *.png
 .*
 viewer/viewer-*.json
