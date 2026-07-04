@@ -35,6 +35,22 @@ Example:
 		xargs rrdtool update sensor.rrd -s --
 	rrdtool graph sensor-1d.png --end now --start end-1d --width 1440 --height 280 -l 0 -u 40 --right-axis 2.5:0 --right-axis-format %.0lf%% DEF:temp=sensor.rrd:temp:AVERAGE DEF:humidr=sensor.rrd:humid:AVERAGE CDEF:humid=humidr,2.5,/ LINE1:temp#ff0000 LINE1:humid#0000ff
 
+Backfilling Gaps
+----------------
+
+The daily cron (`dejvice.sh`) only feeds the RRD with `day` (last 24h) data, so
+any downtime longer than a day leaves a gap that plain `rrdtool update` cannot
+fill (it refuses timestamps older than the last update). `backfill.py` dumps
+the RRD and fills the NaN rows that fall inside the device's hourly `year`
+history (existing real data is never touched):
+
+	./tp357tool.py ADDRESS year > year.csv
+	./backfill.py NAME.rrd year.csv --apply   # omit --apply for a dry run
+
+`dejvice.sh` does this automatically: for each device it checks `rrdtool last`
+*before* the `day` fetch, and if the RRD is stale by more than a day it pulls
+the `year` history and backfills the gap.
+
 Weather Station (outside / living room)
 --------------------------------------
 
