@@ -3,7 +3,20 @@
 # Runs from its own directory; uses the local .venv (system-site-packages
 # venv providing PyGObject/gi + pydbus) so it works under cron.
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
+
+# Prevent overlapping runs: cron fires every 2h, but a slow/hung BLE fetch can
+# outlast that. Without this guard, runs stack up and their leaked adapter
+# sessions eventually wedge the controller ("Device not found" for everything).
+exec 9>"$PWD/.dejvice.lock"
+if ! flock -n 9; then
+	echo "another dejvice.sh is still running -- skipping this run"
+	exit 0
+fi
+
 PY="$PWD/.venv/bin/python"
+# Hard wall-clock cap for any single BLE fetch, as a backstop to the in-tool
+# timeout, so a wedged D-Bus call can never hang a run indefinitely.
+BTFETCH=(timeout 150 "$PY")
 PUBDIR="$HOME/WWW/dejvice/tp357"
 
 devices="pasky=B8:59:CE:32:9C:D1 kitchen=B8:59:CE:33:0A:A4 storage=B8:59:CE:33:34:57 bedroom=B8:59:CE:33:3F:5A chido=B8:59:CE:32:82:0B bathroomp=10:76:36:19:21:9A bathroomc=B8:59:CE:34:33:8A"
@@ -21,7 +34,7 @@ for d in $devices; do
 	now=$(date +%s)
 	last=$(rrdtool last $name.rrd 2>/dev/null || echo 0)
 
-	"$PY" tp357tool.py $addr day | tail -n +2 | tac | sed 's/\r$//' |
+	"${BTFETCH[@]}" tp357tool.py $addr day | tail -n +2 | tac | sed 's/\r$//' |
 		{ a=0; while IFS=, read temp humid; do if [ "$a" = 0 ]; then A=N; else A=$a; fi; echo "$A:$temp:$humid"; a=$((a-60)); done; } | tac |
 		xargs rrdtool update $name.rrd -s --
 
@@ -31,7 +44,7 @@ for d in $devices; do
 	if [ $((now - last)) -gt 86400 ]; then
 		echo "  last update $(((now - last) / 3600))h ago -- backfilling from year history"
 		yearcsv=$(mktemp)
-		if "$PY" tp357tool.py $addr year >"$yearcsv"; then
+		if "${BTFETCH[@]}" tp357tool.py $addr year >"$yearcsv"; then
 			# No --fetch-epoch: backfill.py defaults to time.time() at its
 			# own invocation, which matches the year fetch we just did far
 			# better than $now (captured minutes earlier, pre-BLE-fetch).
@@ -41,6 +54,11 @@ for d in $devices; do
 	fi
 	rrdtool graph $name-1d.png --end now --start end-1d --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
 	rrdtool graph $name-1w.png --end now --start end-1w --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
+
+	# Let the adapter settle between devices: back-to-back StartDiscovery/
+	# StopDiscovery cycles (esp. for absent sensors) can race and leave the
+	# controller stuck "discovering", which wedges all further lookups.
+	sleep 3
 done
 
 # Outside + living room come from the Wunderground-protocol weather station
