@@ -29,19 +29,40 @@ def run_mainloop():
     return mainloop
 
 
+def get_adapter_path(bus):
+    # Never hard-code /org/bluez/hci0: the controller's index can change across
+    # reboots/updates (it moved hci0 -> hci1 here once), which silently breaks
+    # every hard-coded path. Discover the current adapter from ObjectManager.
+    om = bus.get("org.bluez", "/")["org.freedesktop.DBus.ObjectManager"]
+    for path, ifaces in om.GetManagedObjects().items():
+        if "org.bluez.Adapter1" in ifaces:
+            return path
+    print("No Bluetooth adapter found", file=sys.stderr)
+    sys.exit(1)
+
+
 def get_device(bus, address):
-    dev_path = "/org/bluez/hci0/dev_" + address.replace(":", "_")
+    adapter_path = get_adapter_path(bus)
+    dev_path = adapter_path + "/dev_" + address.replace(":", "_")
     try:
         return bus.get("org.bluez", dev_path)
     except KeyError:
         pass
 
-    adapter = bus.get("org.bluez", "/org/bluez/hci0")
-    try:
-        adapter.StartDiscovery()
-    except GLib.Error as e:
-        # Already discovering (e.g. a leftover session) is fine to proceed on.
-        print(e, file=sys.stderr)
+    adapter = bus.get("org.bluez", adapter_path)
+    # Only manage discovery ourselves if nothing is already scanning. When
+    # dejvice.sh runs one shared scan for the whole batch, per-device
+    # StartDiscovery/StopDiscovery churn races the controller and leaves it
+    # stuck "discovering" (StopDiscovery -> InProgress), which wedges every
+    # subsequent lookup. So we piggy-back on the existing scan and never touch
+    # discovery when it's already active.
+    started = False
+    if not adapter.Discovering:
+        try:
+            adapter.StartDiscovery()
+            started = True
+        except GLib.Error as e:
+            print(e, file=sys.stderr)
 
     try:
         N_TRIES = 12
@@ -56,14 +77,14 @@ def get_device(bus, address):
         print("Device not found", file=sys.stderr)
         sys.exit(1)
     finally:
-        # Always release our discovery session, even on failure/exit. A
-        # StopDiscovery that itself errors (BlueZ can raise InProgress) must
-        # never propagate, or we leak the session -- leaked sessions pile up
-        # and eventually wedge the controller ("Device not found" for all).
-        try:
-            adapter.StopDiscovery()
-        except GLib.Error as e:
-            print(e, file=sys.stderr)
+        # Only stop discovery if *we* started it; never stop a scan owned by
+        # someone else (e.g. dejvice.sh's shared batch scan). A StopDiscovery
+        # that itself errors (BlueZ can raise InProgress) must never propagate.
+        if started:
+            try:
+                adapter.StopDiscovery()
+            except GLib.Error as e:
+                print(e, file=sys.stderr)
 
 
 def bt_setup(address):

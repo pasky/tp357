@@ -21,6 +21,10 @@ PUBDIR="$HOME/WWW/dejvice/tp357"
 
 devices="pasky=B8:59:CE:32:9C:D1 kitchen=B8:59:CE:33:0A:A4 storage=B8:59:CE:33:34:57 bedroom=B8:59:CE:33:3F:5A chido=B8:59:CE:32:82:0B bathroomp=10:76:36:19:21:9A bathroomc=B8:59:CE:34:33:8A"
 
+# NB: each tp357tool.py handles its own BLE discovery per device (discover ->
+# stop -> connect). Do NOT hold a shared scan open across the loop: a single
+# radio can't reliably scan and connect at once, so an active scan makes every
+# Connect() fail with le-connection-abort-by-local.
 for d in $devices; do
 	echo $d
 	IFS== read name addr <<<$d
@@ -55,10 +59,6 @@ for d in $devices; do
 	rrdtool graph $name-1d.png --end now --start end-1d --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
 	rrdtool graph $name-1w.png --end now --start end-1w --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
 
-	# Let the adapter settle between devices: back-to-back StartDiscovery/
-	# StopDiscovery cycles (esp. for absent sensors) can race and leave the
-	# controller stuck "discovering", which wedges all further lookups.
-	sleep 3
 done
 
 # Outside + living room come from the Wunderground-protocol weather station
