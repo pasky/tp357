@@ -19,7 +19,7 @@ PY="$PWD/.venv/bin/python"
 BTFETCH=(timeout 150 "$PY")
 PUBDIR="$HOME/WWW/dejvice/tp357"
 
-devices="pasky=B8:59:CE:32:9C:D1 kitchen=B8:59:CE:33:0A:A4 storage=B8:59:CE:33:34:57 bedroom=B8:59:CE:33:3F:5A chido=B8:59:CE:32:82:0B bathroomp=10:76:36:19:21:9A bathroomc=B8:59:CE:34:33:8A"
+devices="pasky=B8:59:CE:32:9C:D1 kitchen=B8:59:CE:33:0A:A4 storage=B8:59:CE:33:34:57 bedroom=FD:A2:F4:E1:AA:B0 chido=B8:59:CE:32:82:0B bathroomp=10:76:36:19:21:9A bathroomc=B8:59:CE:34:33:8A"
 
 # NB: each tp357tool.py handles its own BLE discovery per device (discover ->
 # stop -> connect). Do NOT hold a shared scan open across the loop: a single

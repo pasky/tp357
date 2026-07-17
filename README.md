@@ -21,6 +21,23 @@ Example: `./tp357tool.py B8:59:CE:32:9C:D1 now`
 
 Outputs a CSV file with temperature and humidity time series, oldest first.
 
+TP357S Variant
+--------------
+
+The newer TP357S variant (auto-detected from its advertised name) speaks a
+completely different history protocol -- the TP357 opcodes above only produce
+a live-reading echo on it. The implementation follows the protocol
+reverse-engineered by https://github.com/giovannipizzi/pytp357s (see its
+PROTOCOL.md): a 0xa5 datetime-sync handshake followed by a 0xcccc-framed
+request. Differences to be aware of:
+
+* The device stores minute-resolution records only, up to ~45 days (16-bit
+  record count). "year" returns everything it has.
+* "week"/"year" output hourly averages of the minute records, so the output
+  format (and backfill.py alignment) matches the TP357.
+* A battery pull appears to clear the stored history.
+* "now" works unchanged (same 0xc2 notification format).
+
 History and Plots with RRD
 --------------------------
 
