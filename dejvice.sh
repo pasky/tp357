@@ -43,20 +43,24 @@ for d in $devices; do
 		xargs rrdtool update $name.rrd -s --
 
 	# Stale by more than a day: backfill the pre-`day` gap from the device's
-	# hourly `year` history (up to ~365 days). backfill.py only touches NaN
-	# rows, so the fresh minute-resolution data we just wrote is preserved.
+	# hourly `year` history (up to ~365 days on the TP357, only ~20 days on
+	# the TP357S). backfill.py only touches NaN rows, so the fresh
+	# minute-resolution data we just wrote is preserved.
 	if [ $((now - last)) -gt 86400 ]; then
 		echo "  last update $(((now - last) / 3600))h ago -- backfilling from year history"
 		yearcsv=$(mktemp)
-		# Capture the epoch right before the fetch: the device aligns its
-		# history to the moment it receives the request, and a slow BLE
-		# transfer (up to 150s) could otherwise cross an hour boundary and
-		# shift the whole backfilled series by one hour.
-		fepoch=$(date +%s)
-		if "${BTFETCH[@]}" tp357tool.py $addr year >"$yearcsv"; then
-			"$PY" backfill.py $name.rrd "$yearcsv" --fetch-epoch "$fepoch" --apply
+		epochf=$(mktemp)
+		# tp357tool.py records in $epochf the moment it issued the history
+		# request -- that's what the device aligns its history to. Neither a
+		# pre-invocation clock reading (discovery/connect can take a minute)
+		# nor backfill.py's own (the transfer can take minutes) reliably
+		# falls into the same hour, which would shift the whole backfilled
+		# series by an hour.
+		if "${BTFETCH[@]}" tp357tool.py $addr year --epoch-file "$epochf" >"$yearcsv"; then
+			fepoch=$(cat "$epochf" 2>/dev/null)
+			"$PY" backfill.py $name.rrd "$yearcsv" --fetch-epoch "${fepoch:-$(date +%s)}" --apply
 		fi
-		rm -f "$yearcsv"
+		rm -f "$yearcsv" "$epochf"
 	fi
 	rrdtool graph $name-1d.png --end now --start end-1d --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
 	rrdtool graph $name-1w.png --end now --start end-1w --width 720 --height 280 -l 0 -u 100 --left-axis-format %.0lf%% --right-axis 0.18:14 --right-axis-format %.0lf DEF:temp=$name.rrd:temp:AVERAGE DEF:humid=$name.rrd:humid:AVERAGE CDEF:temps=temp,14,-,0.18,/ LINE1:temps#ff0000 LINE1:humid#0000ff
