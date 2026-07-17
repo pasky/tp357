@@ -48,11 +48,13 @@ for d in $devices; do
 	if [ $((now - last)) -gt 86400 ]; then
 		echo "  last update $(((now - last) / 3600))h ago -- backfilling from year history"
 		yearcsv=$(mktemp)
+		# Capture the epoch right before the fetch: the device aligns its
+		# history to the moment it receives the request, and a slow BLE
+		# transfer (up to 150s) could otherwise cross an hour boundary and
+		# shift the whole backfilled series by one hour.
+		fepoch=$(date +%s)
 		if "${BTFETCH[@]}" tp357tool.py $addr year >"$yearcsv"; then
-			# No --fetch-epoch: backfill.py defaults to time.time() at its
-			# own invocation, which matches the year fetch we just did far
-			# better than $now (captured minutes earlier, pre-BLE-fetch).
-			"$PY" backfill.py $name.rrd "$yearcsv" --apply
+			"$PY" backfill.py $name.rrd "$yearcsv" --fetch-epoch "$fepoch" --apply
 		fi
 		rm -f "$yearcsv"
 	fi

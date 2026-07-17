@@ -149,7 +149,7 @@ def wait_for_temp(read, write):
         print("No data received", file=sys.stderr)
         sys.exit(1)
 
-    temp = (raw[3] + raw[4] * 256) / 10
+    temp = int.from_bytes(bytes(raw[3:5]), "little", signed=True) / 10
     humid = raw[5]
     return [temp], [humid]
 
@@ -183,7 +183,10 @@ def get_temperatures_tp357s(read, write, mode):
     elif mode == "week":
         count, hourly = 7 * 1440, True
     elif mode == "year":
-        count, hourly = 65535, True
+        # The firmware silently ignores requests for more than 28800 records
+        # (empirically bisected: 28800 works, 28801 gets no response), which
+        # is exactly 20 days x 1440 -- presumably the history buffer size.
+        count, hourly = 28800, True
     else:
         raise RuntimeError(f"Unknown mode: {mode}")
 
@@ -195,7 +198,6 @@ def get_temperatures_tp357s(read, write, mode):
         if 'Value' not in prop_changed:
             return
         d = bytes(prop_changed['Value'])
-        state["last_rx"] = time.time()
         if d[:2] == b"\xcc\xcc":
             # Start of (a new) history stream; drop any earlier partial one.
             chunks.clear()
@@ -204,6 +206,11 @@ def get_temperatures_tp357s(read, write, mode):
             if d[:1] == b"\xc2" and len(d) == 7:
                 return  # interleaved periodic live reading, not stream data
             chunks.append(d)
+        else:
+            # Pre-stream chatter (periodic 0xc2 live readings) must not feed
+            # the idle timer, or a never-starting stream would never time out.
+            return
+        state["last_rx"] = time.time()
         if chunks and chunks[-1][-2:] == b"\x66\x66":
             state["done"] = True
             mainloop.quit()
@@ -234,9 +241,11 @@ def get_temperatures_tp357s(read, write, mode):
 
     # A full 65535-record transfer takes ~45s, so the flat MAINLOOP_TIMEOUT
     # would be too tight; instead quit when the stream stalls (no notification
-    # for a while), with a generous hard cap as backstop.
+    # for a while), with a hard cap as backstop. The cap must stay below
+    # dejvice.sh's external `timeout 150` so we normally get to clean up
+    # (Disconnect) ourselves instead of being SIGTERMed.
     IDLE_TIMEOUT = 30
-    HARD_TIMEOUT = 240
+    HARD_TIMEOUT = 120
     t0 = time.time()
 
     def check_progress():
@@ -261,13 +270,30 @@ def get_temperatures_tp357s(read, write, mode):
         sys.exit(1)
 
     # Stream: cc cc 01 [len x3] 00 [temp16le/10 humid8]... [cksum] 66 66
-    buf = b"".join(chunks)[2:-2]
+    # where len = records*3 + 1. Validate framing and the declared length so
+    # a lost interior chunk can't silently shift triplet alignment and feed
+    # garbage positional history into the RRD.
+    buf = b"".join(chunks)
+    if buf[:3] != b"\xcc\xcc\x01" or buf[-2:] != b"\x66\x66":
+        print(f"Malformed history stream framing ({len(buf)} bytes)",
+              file=sys.stderr)
+        sys.exit(1)
+    buf = buf[2:-2]
     pairs = buf[5:-1]
+    declared = int.from_bytes(buf[1:4], "little")
+    if len(pairs) % 3 or (declared != len(pairs) + 1
+                          and int.from_bytes(buf[1:4], "big") != len(pairs) + 1):
+        print(f"History stream length mismatch (declared {declared}, "
+              f"got {len(pairs) + 1}) -- dropped chunk?", file=sys.stderr)
+        sys.exit(1)
     readings = []  # most recent record first, one per minute
-    for i in range(0, len(pairs) - len(pairs) % 3, 3):
+    for i in range(0, len(pairs), 3):
         readings.append((int.from_bytes(pairs[i:i+2], "little", signed=True) / 10,
                          pairs[i+2]))
     print(f"Got {len(readings)} minute records", file=sys.stderr)
+    if not readings:
+        print("History response contained no readings", file=sys.stderr)
+        sys.exit(1)
 
     if not hourly:
         temps = [t for t, h in reversed(readings)]

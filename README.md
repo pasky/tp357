@@ -31,8 +31,10 @@ reverse-engineered by https://github.com/giovannipizzi/pytp357s (see its
 PROTOCOL.md): a 0xa5 datetime-sync handshake followed by a 0xcccc-framed
 request. Differences to be aware of:
 
-* The device stores minute-resolution records only, up to ~45 days (16-bit
-  record count). "year" returns everything it has.
+* The device stores minute-resolution records only. Requests for more than
+  28800 records (= exactly 20 days) are silently ignored by the firmware,
+  so that's presumably the history buffer size; "year" requests that
+  maximum and returns everything the device has.
 * "week"/"year" output hourly averages of the minute records, so the output
   format (and backfill.py alignment) matches the TP357.
 * A battery pull appears to clear the stored history.
