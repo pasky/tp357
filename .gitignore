@@ -3,3 +3,4 @@
 *.png
 .*
 viewer/viewer-*.json
+__pycache__/
